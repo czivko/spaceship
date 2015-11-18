@@ -38,6 +38,13 @@ module Spaceship
       "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/"
     end
 
+    def service_key
+      return @service_key if @service_key
+      # We need a service key from a JS file to properly auth
+      js = request(:get, "https://itunesconnect.apple.com/itc/static-resources/controllers/login_cntrl.js")
+      @service_key ||= js.body.match(/itcServiceKey = '(.*)'/)[1]
+    end
+
     def send_login_request(user, password)
       data = {
         accountName: user,
@@ -46,7 +53,7 @@ module Spaceship
       }
 
       response = request(:post) do |req|
-        req.url "https://idmsa.apple.com/appleauth/auth/signin"
+        req.url "https://idmsa.apple.com/appleauth/auth/signin?widgetKey=#{service_key}"
         req.body = data.to_json
         req.headers['Content-Type'] = 'application/json'
         req.headers['X-Requested-With'] = 'XMLHttpRequest'
@@ -59,7 +66,11 @@ module Spaceship
 
       case response.status
       when 403, 401
-        raise InvalidUserCredentialsError.new, "Invalid username and password combination. Used '#{user}' as the username."
+        if response["Location"] == "/auth" # redirect to 2 step auth page
+          raise "spaceship / fastlane doesn't support 2 step enabled accounts yet. Please temporary disable 2 step verification until spaceship was updated."
+        else
+          raise InvalidUserCredentialsError.new, "Invalid username and password combination. Used '#{user}' as the username."
+        end
       when 200
         return response
       else
@@ -206,8 +217,8 @@ module Spaceship
       handle_itc_response(data)
     end
 
-    def get_resolution_center(app_id)
-      r = request(:get, "ra/apps/#{app_id}/resolutionCenter?v=latest")
+    def get_resolution_center(app_id, platform)
+      r = request(:get, "ra/apps/#{app_id}/platforms/#{platform}/resolutionCenter?v=latest")
       parse_response(r, 'data')
     end
 
@@ -226,6 +237,8 @@ module Spaceship
       platform = platforms.find do |p|
         ['ios', 'osx'].include? p['platformString']
       end
+
+      raise "Could not find platform ios or osx for app #{app_id}" unless platform
 
       version = platform[(is_live ? 'deliverableVersion' : 'inFlightVersion')]
       return nil unless version
