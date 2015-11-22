@@ -186,6 +186,38 @@ module Spaceship
       parse_response(r, 'data')
     end
 
+    def teams
+      r = request(:get, "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/ra/user/detail")
+      parse_response(r, 'data')['associatedAccounts']
+    end
+
+    def current_team
+      r = request(:get, "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/ra/user/detail")
+      details = parse_response(r, 'data')
+      {'contentProviderId': details['contentProviderId'], 'name': details['contentProvider']}
+    end
+
+    def set_team(team_id)
+      r = request(:post) do |req|
+        req.url "ra/v1/session/webSession"
+        req.body = {contentProviderId: "#{team_id}"}.to_json #team_id
+        req.headers['Content-Type'] = 'application/json'
+      end
+      refresh_login_overhead_cookies(r.headers)
+      handle_itc_response(r.body)
+    end
+
+    def refresh_login_overhead_cookies(headers)
+      unless headers['Set-Cookie'].include?("itctx")
+        raise "Looks like your Apple ID is not enabled for iTunes Connect, make sure to be able to login online"
+      end
+
+      itctx_regex = /itctx=([^;]*)/
+      new_itctx = headers['Set-Cookie'].match(itctx_regex).to_s
+
+      @cookie = @cookie.gsub(itctx_regex, new_itctx)
+    end
+
     def update_app_details!(app_id, data)
       r = request(:post) do |req|
         req.url "ra/apps/#{app_id}/details"
