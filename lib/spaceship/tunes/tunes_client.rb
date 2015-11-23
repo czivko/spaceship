@@ -99,7 +99,7 @@ module Spaceship
         rescue
           raise ITunesConnectError.new, [response.body, response['Set-Cookie']].join("\n")
         end
-
+        select_team
         return @client
       else
         if response["Location"] == "/auth" # redirect to 2 step auth page
@@ -195,6 +195,23 @@ module Spaceship
       r = request(:get, "https://itunesconnect.apple.com/WebObjects/iTunesConnect.woa/ra/user/detail")
       details = parse_response(r, 'data')
       {'contentProviderId': details['contentProviderId'], 'name': details['contentProvider']}
+    end
+
+    def select_team
+      team_id = (ENV['FASTLANE_ITUNES_TEAM_ID'] || '').strip
+      team_name = (ENV['FASTLANE_TEAM_NAME'] || '').strip
+      return unless team_id.length > 0 or team_name.length > 0
+
+      if team_id.length == 0
+        teams.each do |t|
+          team_id = t['contentProvider']['contentProviderId'] if t['contentProvider']['name'] == team_name
+        end
+      end
+
+      if current_team[:contentProviderId].to_s != team_id.to_s
+        puts "Changing to team_id #{team_id}"
+        set_team(team_id)
+      end
     end
 
     def set_team(team_id)
